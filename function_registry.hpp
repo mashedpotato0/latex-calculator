@@ -1,11 +1,4 @@
 #pragma once
-// function_registry.hpp — multi-parameter user-defined functions
-//
-// Usage:
-//   function_registry reg;
-//   reg.define_from_string("f(x) = sin(x) + x^2");
-//   reg.define_from_string("a(x,y,z) = x^2 + y^2 + z");
-//   double val = reg.call_numeric("f", {M_PI/2}, ctx);
 
 #include "ast.hpp"
 #include "lexer.hpp"
@@ -22,14 +15,12 @@ struct user_func_def {
     std::string              name;
     std::vector<std::string> params;
     std::shared_ptr<expr>    body;
-    std::string              source;   // original definition string
+    std::string              source;
 };
 
 class function_registry {
 public:
     std::map<std::string, user_func_def> funcs;
-
-    // ── define ────────────────────────────────────────────────────────────
 
     void define(const std::string& name,
                 const std::vector<std::string>& params,
@@ -38,10 +29,7 @@ public:
         funcs[name] = { name, params, std::move(body), src };
     }
 
-    // Parse and register a string like "f(x) = sin(x) + x^2"
-    // Returns true on success; on failure sets `error` and returns false.
     bool define_from_string(const std::string& def_str, std::string& error) {
-        // find '('
         auto lp = def_str.find('(');
         auto rp = def_str.find(')');
         auto eq = def_str.find('=', rp != std::string::npos ? rp : 0);
@@ -51,11 +39,9 @@ public:
             return false;
         }
 
-        // extract name
         std::string fname = trim(def_str.substr(0, lp));
         if (fname.empty()) { error = "empty function name"; return false; }
 
-        // extract param list
         std::string param_str = def_str.substr(lp + 1, rp - lp - 1);
         std::vector<std::string> params;
         std::istringstream ps(param_str);
@@ -65,11 +51,9 @@ public:
             if (!p.empty()) params.push_back(p);
         }
 
-        // extract body
         std::string body_str = trim(def_str.substr(eq + 1));
         if (body_str.empty()) { error = "empty function body"; return false; }
 
-        // parse body
         auto tokens = tokenize(body_str);
         parser par(tokens);
         auto ast = par.parse_expr();
@@ -79,8 +63,6 @@ public:
         return true;
     }
 
-    // ── query ─────────────────────────────────────────────────────────────
-
     bool has(const std::string& name) const { return funcs.count(name) > 0; }
 
     const user_func_def* get(const std::string& name) const {
@@ -88,15 +70,12 @@ public:
         return it != funcs.end() ? &it->second : nullptr;
     }
 
-    // ── symbolic call ─────────────────────────────────────────────────────
-
-    // Returns the body with params substituted by expr arguments.
     std::unique_ptr<expr> call_symbolic(const std::string& name,
                                         const std::vector<std::unique_ptr<expr>>& args) const {
         auto def = get(name);
-        if (!def) throw std::runtime_error("Unknown function: " + name);
+        if (!def) throw std::runtime_error("unknown function: " + name);
         if (args.size() != def->params.size())
-            throw std::runtime_error("Wrong arg count for " + name);
+            throw std::runtime_error("wrong arg count for " + name);
 
         auto body = def->body->clone();
         for (size_t i = 0; i < def->params.size(); ++i)
@@ -104,25 +83,20 @@ public:
         return body->simplify();
     }
 
-    // ── numeric call ──────────────────────────────────────────────────────
-
     double call_numeric(const std::string& name,
                         const std::vector<double>& args,
                         context& ctx) const {
         auto def = get(name);
-        if (!def) throw std::runtime_error("Unknown function: " + name);
+        if (!def) throw std::runtime_error("unknown function: " + name);
         if (args.size() != def->params.size())
-            throw std::runtime_error("Wrong arg count for " + name);
+            throw std::runtime_error("wrong arg count for " + name);
 
-        // bind params in a local copy of the context
         context local = ctx;
         for (size_t i = 0; i < def->params.size(); ++i)
             local.vars[def->params[i]] = args[i];
 
         return def->body->eval(local);
     }
-
-    // ── management ────────────────────────────────────────────────────────
 
     void remove(const std::string& name) { funcs.erase(name); }
     void clear() { funcs.clear(); }
@@ -134,7 +108,6 @@ public:
         }
     }
 
-    // install user functions into a context's builtins (1-param only)
     void install_into(context& ctx) const {
         for (auto& [name, def] : funcs) {
             if (def.params.size() == 1) {

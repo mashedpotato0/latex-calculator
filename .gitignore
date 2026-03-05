@@ -1,1 +1,22 @@
-*.py
+# Build artifacts
+calc
+repl
+repl_test
+quick_test
+*.o
+*.a
+*.so
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+

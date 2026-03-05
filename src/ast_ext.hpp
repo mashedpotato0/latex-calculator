@@ -1,10 +1,4 @@
 #pragma once
-// ast_ext.hpp extended ast nodes
-// add to project alongside ast.hpp. include after ast.hpp
-// nodes: named_constant, factorial_node, combination_node,
-//        permutation_node, sum_node, product_node, abs_node
-//
-// extends context for multi-param user functions
 
 #include "ast.hpp"
 #include <cmath>
@@ -33,54 +27,17 @@ static inline const std::map<std::string, std::string> &const_latex() {
   return L;
 }
 
-struct named_constant : expr {
-  std::string name;
-  double value;
-
-  explicit named_constant(const std::string &n) : name(n) {
-    const auto &C = builtin_constants();
-    value = C.count(n) ? C.at(n) : 0.0;
-  }
-
-  double eval(context &) const override { return value; }
-  std::string to_string() const override {
-    const auto &L = const_latex();
-    return L.count(name) ? L.at(name) : name;
-  }
-  std::unique_ptr<expr> clone() const override {
-    return std::make_unique<named_constant>(name);
-  }
-  std::unique_ptr<expr> derivative(const std::string &) const override {
-    return std::make_unique<number>(0);
-  }
-  std::unique_ptr<expr> simplify() const override {
-    return std::make_unique<number>(value);
-  }
-  std::unique_ptr<expr> substitute(const std::string &,
-                                   const expr &) const override {
-    return clone();
-  }
-  std::unique_ptr<expr> expand(const context &) const override {
-    return clone();
-  }
-  bool equals(const expr &o) const override {
-    auto p = dynamic_cast<const named_constant *>(&o);
-    return p && name == p->name;
-  }
-  bool is_number() const override { return true; }
-};
-
 // gcd
 
 struct gcd_node : expr {
-  std::unique_ptr<expr> n_expr, r_expr;
-
-  gcd_node(std::unique_ptr<expr> n, std::unique_ptr<expr> r)
-      : n_expr(std::move(n)), r_expr(std::move(r)) {}
+  std::unique_ptr<expr> left, right;
+  gcd_node(std::unique_ptr<expr> l, std::unique_ptr<expr> r)
+      : left(std::move(l)), right(std::move(r)) {}
 
   double eval(context &ctx) const override {
-    long long a = std::abs(std::round(n_expr->eval(ctx)));
-    long long b = std::abs(std::round(r_expr->eval(ctx)));
+    long long a = static_cast<long long>(std::abs(std::round(left->eval(ctx))));
+    long long b =
+        static_cast<long long>(std::abs(std::round(right->eval(ctx))));
     while (b) {
       long long t = b;
       b = a % b;
@@ -89,72 +46,91 @@ struct gcd_node : expr {
     return static_cast<double>(a);
   }
   std::string to_string() const override {
-    return "\\gcd{" + n_expr->to_string() + "}{" + r_expr->to_string() + "}";
+    return "\\gcd\\left(" + left->to_string() + ", " + right->to_string() +
+           "\\right)";
   }
   std::unique_ptr<expr> clone() const override {
-    return std::make_unique<gcd_node>(n_expr->clone(), r_expr->clone());
+    return std::make_unique<gcd_node>(left->clone(), right->clone());
   }
   std::unique_ptr<expr> derivative(const std::string &) const override {
     return std::make_unique<number>(0);
   }
-  std::unique_ptr<expr> simplify() const override { return clone(); }
+  std::unique_ptr<expr> simplify() const override {
+    auto sl = left->simplify();
+    auto sr = right->simplify();
+    if (sl->is_number() && sr->is_number()) {
+      context c;
+      gcd_node tmp(sl->clone(), sr->clone());
+      return std::make_unique<number>(tmp.eval(c));
+    }
+    return std::make_unique<gcd_node>(std::move(sl), std::move(sr));
+  }
   std::unique_ptr<expr> substitute(const std::string &v,
                                    const expr &r) const override {
-    return std::make_unique<gcd_node>(n_expr->substitute(v, r),
-                                      r_expr->substitute(v, r));
+    return std::make_unique<gcd_node>(left->substitute(v, r),
+                                      right->substitute(v, r));
   }
   std::unique_ptr<expr> expand(const context &c) const override {
-    return std::make_unique<gcd_node>(n_expr->expand(c), r_expr->expand(c));
+    return std::make_unique<gcd_node>(left->expand(c), right->expand(c));
   }
   bool equals(const expr &o) const override {
     auto p = dynamic_cast<const gcd_node *>(&o);
-    return p && n_expr->equals(*p->n_expr) && r_expr->equals(*p->r_expr);
+    return p && left->equals(*p->left) && right->equals(*p->right);
   }
 };
 
 // lcm
 
 struct lcm_node : expr {
-  std::unique_ptr<expr> n_expr, r_expr;
-
-  lcm_node(std::unique_ptr<expr> n, std::unique_ptr<expr> r)
-      : n_expr(std::move(n)), r_expr(std::move(r)) {}
+  std::unique_ptr<expr> left, right;
+  lcm_node(std::unique_ptr<expr> l, std::unique_ptr<expr> r)
+      : left(std::move(l)), right(std::move(r)) {}
 
   double eval(context &ctx) const override {
-    long long a = std::abs(std::round(n_expr->eval(ctx)));
-    long long b = std::abs(std::round(r_expr->eval(ctx)));
+    long long a = static_cast<long long>(std::abs(std::round(left->eval(ctx))));
+    long long b =
+        static_cast<long long>(std::abs(std::round(right->eval(ctx))));
     if (a == 0 || b == 0)
       return 0;
-    long long temp_a = a, temp_b = b;
-    while (temp_b) {
-      long long t = temp_b;
-      temp_b = temp_a % temp_b;
-      temp_a = t;
+    long long ta = a, tb = b;
+    while (tb) {
+      long long t = tb;
+      tb = ta % tb;
+      ta = t;
     }
-    return static_cast<double>((a / temp_a) * b);
+    return static_cast<double>((a / ta) * b);
   }
   std::string to_string() const override {
-    return "\\text{lcm}{" + n_expr->to_string() + "}{" + r_expr->to_string() +
-           "}";
+    return "\\text{lcm}\\left(" + left->to_string() + ", " +
+           right->to_string() + "\\right)";
   }
   std::unique_ptr<expr> clone() const override {
-    return std::make_unique<lcm_node>(n_expr->clone(), r_expr->clone());
+    return std::make_unique<lcm_node>(left->clone(), right->clone());
   }
   std::unique_ptr<expr> derivative(const std::string &) const override {
     return std::make_unique<number>(0);
   }
-  std::unique_ptr<expr> simplify() const override { return clone(); }
+  std::unique_ptr<expr> simplify() const override {
+    auto sl = left->simplify();
+    auto sr = right->simplify();
+    if (sl->is_number() && sr->is_number()) {
+      context c;
+      lcm_node tmp(sl->clone(), sr->clone());
+      return std::make_unique<number>(tmp.eval(c));
+    }
+    return std::make_unique<lcm_node>(std::move(sl), std::move(sr));
+  }
   std::unique_ptr<expr> substitute(const std::string &v,
                                    const expr &r) const override {
-    return std::make_unique<lcm_node>(n_expr->substitute(v, r),
-                                      r_expr->substitute(v, r));
+    return std::make_unique<lcm_node>(left->substitute(v, r),
+                                      right->substitute(v, r));
   }
   std::unique_ptr<expr> expand(const context &c) const override {
-    return std::make_unique<lcm_node>(n_expr->expand(c), r_expr->expand(c));
+    return std::make_unique<lcm_node>(left->expand(c), right->expand(c));
   }
   bool equals(const expr &o) const override {
     auto p = dynamic_cast<const lcm_node *>(&o);
-    return p && n_expr->equals(*p->n_expr) && r_expr->equals(*p->r_expr);
+    return p && left->equals(*p->left) && right->equals(*p->right);
   }
 };
 
@@ -173,7 +149,6 @@ static inline double fact_dbl(int n) {
 
 struct factorial_node : expr {
   std::unique_ptr<expr> arg;
-
   explicit factorial_node(std::unique_ptr<expr> a) : arg(std::move(a)) {}
 
   double eval(context &ctx) const override {
@@ -213,7 +188,6 @@ struct factorial_node : expr {
 
 struct combination_node : expr {
   std::unique_ptr<expr> n_expr, r_expr;
-
   combination_node(std::unique_ptr<expr> n, std::unique_ptr<expr> r)
       : n_expr(std::move(n)), r_expr(std::move(r)) {}
 
@@ -222,7 +196,6 @@ struct combination_node : expr {
     int r = static_cast<int>(std::round(r_expr->eval(ctx)));
     if (r < 0 || r > n)
       return 0;
-    // iterative to avoid overflow
     double result = 1;
     for (int i = 0; i < r; ++i)
       result = result * (n - i) / (i + 1);
@@ -265,7 +238,6 @@ struct combination_node : expr {
 
 struct permutation_node : expr {
   std::unique_ptr<expr> n_expr, r_expr;
-
   permutation_node(std::unique_ptr<expr> n, std::unique_ptr<expr> r)
       : n_expr(std::move(n)), r_expr(std::move(r)) {}
 
@@ -433,7 +405,6 @@ struct product_node : expr {
 
 struct abs_node : expr {
   std::unique_ptr<expr> arg;
-
   explicit abs_node(std::unique_ptr<expr> a) : arg(std::move(a)) {}
 
   double eval(context &ctx) const override { return std::abs(arg->eval(ctx)); }
@@ -444,7 +415,7 @@ struct abs_node : expr {
     return std::make_unique<abs_node>(arg->clone());
   }
   std::unique_ptr<expr> derivative(const std::string &var) const override {
-    // d/dx |u| = (u/|u|) * u'
+    // d/dx |u| = (u / |u|) * u'
     return std::make_unique<multiply>(
         std::make_unique<divide>(arg->clone(),
                                  std::make_unique<abs_node>(arg->clone())),
